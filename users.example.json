@@ -1,0 +1,14 @@
+{
+  "123456789012345678": {
+    "balance": 10000,
+    "purchases": [
+      {
+        "product_id": "product1",
+        "product_name": "콜라",
+        "quantity": 2,
+        "total_price": 3000,
+        "timestamp": "2025-10-25T12:00:00"
+      }
+    ]
+  }
+}
