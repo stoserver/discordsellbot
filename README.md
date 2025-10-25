@@ -17,6 +17,7 @@ Discord에서 사용할 수 있는 자판기 봇입니다. 사용자들은 포�
 - **재고 관리**: 버튼으로 재고 추가
 - **상품 목록 조회**: 등록된 상품 확인
 - **포인트 충전**: 사용자에게 포인트 지급
+- **Pushbullet 자동 충전**: Android 알림을 통한 자동 충전
 
 ## 설치 방법
 
@@ -155,6 +156,82 @@ python bot.py
 /충전 user:@사용자 amount:10000
 ```
 
+### Pushbullet 자동 충전 (관리자 명령어)
+
+⚠️ **중요: Android 기기만 지원됩니다. iOS(아이폰)는 지원되지 않습니다.**
+
+Pushbullet을 이용한 알림 미러링으로 자동 충전을 구현할 수 있습니다.
+
+#### 설정 방법
+
+1. **Pushbullet 계정 생성 및 API 키 발급**
+   - [Pushbullet 웹사이트](https://www.pushbullet.com/)에서 계정 생성
+   - Settings > Account > Access Token에서 API 키 복사
+
+2. **Android 기기 설정**
+   - Google Play 스토어에서 Pushbullet 앱 설치
+   - 같은 계정으로 로그인
+   - 알림 미러링 권한 허용
+
+3. **봇 설정**
+   ```
+   /pushbullet설정 api_key:여기에_API_키_입력
+   ```
+
+4. **알림 미러링 시작**
+   ```
+   /pushbullet시작
+   ```
+
+#### 알림 형식
+
+충전을 위해서는 알림 제목 또는 내용에 다음 정보가 포함되어야 합니다:
+
+```
+충전 10000원
+사용자 ID: 123456789012345678
+```
+
+또는
+
+```
+충전 5000
+사용자 ID 987654321098765432
+```
+
+**예시 시나리오:**
+1. 결제 시스템에서 충전 완료 알림 전송
+2. Android 기기가 알림 수신
+3. Pushbullet이 알림을 미러링
+4. 봇이 자동으로 패턴 인식 후 충전 실행
+5. 로그에 기록
+
+#### Pushbullet 명령어
+
+| 명령어 | 설명 |
+|--------|------|
+| `/pushbullet설정 [api_key]` | API 키 설정 |
+| `/pushbullet시작` | 알림 미러링 시작 |
+| `/pushbullet중지` | 알림 미러링 중지 |
+| `/pushbullet상태` | 연결 상태 및 통계 확인 |
+| `/pushbullet패턴 [charge_pattern] [user_id_pattern]` | 알림 패턴 커스터마이징 (정규식) |
+
+#### 커스텀 패턴 설정
+
+기본 패턴이 맞지 않으면 정규식으로 커스터마이징 가능:
+
+```
+/pushbullet패턴 charge_pattern:결제\s*(\d+) user_id_pattern:유저[:\s]*(\d+)
+```
+
+#### 자동 충전 로그
+
+모든 자동 충전 내역은 `auto_charge_log.json`에 기록됩니다:
+- 사용자 ID
+- 충전 금액
+- 타임스탬프
+- 원본 알림 내용
+
 ## 데이터 저장
 
 봇은 다음 두 개의 JSON 파일에 데이터를 저장합니다:
@@ -196,10 +273,11 @@ python bot.py
 ```
 discordsellbot/
 ├── bot.py                    # 메인 봇 파일
-├── config.json               # 봇 설정 (토큰)
+├── config.json               # 봇 설정 (토큰, Pushbullet 설정)
 ├── requirements.txt          # Python 패키지 의존성
 ├── products.json             # 상품 데이터 (자동 생성)
 ├── users.json                # 사용자 데이터 (자동 생성)
+├── auto_charge_log.json      # 자동 충전 로그 (자동 생성)
 ├── products.example.json     # 상품 데이터 예시
 ├── users.example.json        # 사용자 데이터 예시
 └── README.md                 # 이 파일
@@ -215,11 +293,14 @@ discordsellbot/
 ## 향후 개선 사항
 
 - [ ] 데이터베이스 연동 (SQLite, PostgreSQL 등)
-- [ ] 결제 시스템 통합
+- [ ] 결제 시스템 통합 (토스페이, 페이팔 등)
 - [ ] 상품 카테고리 기능
 - [ ] 할인/쿠폰 시스템
 - [ ] 구매 제한 기능
 - [ ] 통계 및 리포트 기능
+- [ ] 웹 대시보드
+- [ ] 다국어 지원
+- [x] Pushbullet 자동 충전 (완료)
 
 ## 라이선스
 
