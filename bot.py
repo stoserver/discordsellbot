@@ -1,6 +1,7 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.ui import Button, Select, View, Modal, TextInput
 import json
 import os
 from datetime import datetime
@@ -47,6 +48,203 @@ class VendingMachineBot(commands.Bot):
 
 bot = VendingMachineBot()
 
+# ========================
+# UI 컴포넌트
+# ========================
+
+class QuantityModal(Modal, title="구매 수량 입력"):
+    """수량 입력 모달"""
+    quantity_input = TextInput(
+        label="구매 수량",
+        placeholder="구매할 수량을 입력하세요 (예: 1, 2, 3...)",
+        required=True,
+        max_length=5
+    )
+
+    def __init__(self, product_id: str, product_name: str):
+        super().__init__()
+        self.product_id = product_id
+        self.product_name = product_name
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            quantity = int(self.quantity_input.value)
+            if quantity <= 0:
+                await interaction.response.send_message("❌ 수량은 1개 이상이어야 합니다.", ephemeral=True)
+                return
+
+            # 구매 처리
+            await process_purchase(interaction, self.product_id, quantity)
+        except ValueError:
+            await interaction.response.send_message("❌ 올바른 숫자를 입력해주세요.", ephemeral=True)
+
+
+class ProductSelect(Select):
+    """상품 선택 드롭다운"""
+    def __init__(self):
+        # 상품이 없으면 기본 옵션 표시
+        if not bot.products:
+            options = [
+                discord.SelectOption(label="등록된 상품이 없습니다", value="none", emoji="❌")
+            ]
+        else:
+            # 최대 25개 상품만 표시 (Discord 제한)
+            options = []
+            for product_id, product in list(bot.products.items())[:25]:
+                stock_text = f"재고: {product['stock']}개" if product['stock'] > 0 else "품절"
+                emoji = "✅" if product['stock'] > 0 else "❌"
+                options.append(
+                    discord.SelectOption(
+                        label=f"{product['name']} - {product['price']:,}원",
+                        value=product_id,
+                        description=f"{product['description'][:50]} | {stock_text}",
+                        emoji=emoji
+                    )
+                )
+
+        super().__init__(
+            placeholder="상품을 선택하세요",
+            min_values=1,
+            max_values=1,
+            options=options
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.values[0] == "none":
+            await interaction.response.send_message("❌ 등록된 상품이 없습니다.", ephemeral=True)
+            return
+
+        product_id = self.values[0]
+        product = bot.products.get(product_id)
+
+        if not product:
+            await interaction.response.send_message("❌ 존재하지 않는 상품입니다.", ephemeral=True)
+            return
+
+        if product['stock'] <= 0:
+            await interaction.response.send_message("❌ 이 상품은 품절되었습니다.", ephemeral=True)
+            return
+
+        # 수량 입력 모달 표시
+        modal = QuantityModal(product_id, product['name'])
+        await interaction.response.send_modal(modal)
+
+
+class ShopView(View):
+    """메인 쇼핑 패널"""
+    def __init__(self):
+        super().__init__(timeout=None)  # 영구적 View
+        self.add_item(ProductSelect())
+
+    @discord.ui.button(label="잔액 확인", style=discord.ButtonStyle.green, emoji="💰", row=1)
+    async def balance_button(self, interaction: discord.Interaction, button: Button):
+        user_id = str(interaction.user.id)
+
+        if user_id not in bot.users:
+            bot.users[user_id] = {"balance": 0, "purchases": []}
+            bot.save_data()
+
+        balance = bot.users[user_id]["balance"]
+        await interaction.response.send_message(
+            f"💰 **잔액**: {balance:,}원",
+            ephemeral=True
+        )
+
+    @discord.ui.button(label="구매 내역", style=discord.ButtonStyle.blurple, emoji="📋", row=1)
+    async def history_button(self, interaction: discord.Interaction, button: Button):
+        user_id = str(interaction.user.id)
+
+        if user_id not in bot.users or not bot.users[user_id]['purchases']:
+            await interaction.response.send_message("❌ 구매 내역이 없습니다.", ephemeral=True)
+            return
+
+        # 최근 5개만 간단히 표시
+        recent = bot.users[user_id]['purchases'][-5:]
+        history_text = "📋 **최근 구매 내역**\n\n"
+
+        for i, purchase in enumerate(reversed(recent), 1):
+            timestamp = datetime.fromisoformat(purchase['timestamp']).strftime('%m/%d %H:%M')
+            history_text += f"{i}. **{purchase['product_name']}** x{purchase['quantity']} - {purchase['total_price']:,}원 ({timestamp})\n"
+
+        await interaction.response.send_message(history_text, ephemeral=True)
+
+    @discord.ui.button(label="상품 새로고침", style=discord.ButtonStyle.gray, emoji="🔄", row=1)
+    async def refresh_button(self, interaction: discord.Interaction, button: Button):
+        # View를 새로 생성하여 업데이트된 상품 목록 반영
+        new_view = ShopView()
+
+        if not bot.products:
+            product_list = "❌ 현재 등록된 상품이 없습니다."
+        else:
+            product_list = "🏪 **자판기 상품 목록**\n\n"
+            for product_id, product in bot.products.items():
+                stock_text = f"{product['stock']}개" if product['stock'] > 0 else "품절"
+                product_list += f"• **{product['name']}** - {product['price']:,}원\n"
+                product_list += f"  ↳ {product['description']} | 재고: {stock_text}\n\n"
+
+        await interaction.response.edit_message(content=product_list, view=new_view)
+
+
+async def process_purchase(interaction: discord.Interaction, product_id: str, quantity: int):
+    """구매 처리 함수"""
+    user_id = str(interaction.user.id)
+
+    # 사용자 초기화
+    if user_id not in bot.users:
+        bot.users[user_id] = {"balance": 0, "purchases": []}
+
+    # 상품 확인
+    if product_id not in bot.products:
+        await interaction.response.send_message("❌ 존재하지 않는 상품입니다.", ephemeral=True)
+        return
+
+    product = bot.products[product_id]
+
+    # 재고 확인
+    if product['stock'] < quantity:
+        await interaction.response.send_message(
+            f"❌ 재고가 부족합니다. (남은 재고: {product['stock']}개)",
+            ephemeral=True
+        )
+        return
+
+    total_price = product['price'] * quantity
+
+    # 잔액 확인
+    if bot.users[user_id]['balance'] < total_price:
+        await interaction.response.send_message(
+            f"❌ 잔액이 부족합니다.\n💰 필요 금액: {total_price:,}원\n💳 현재 잔액: {bot.users[user_id]['balance']:,}원",
+            ephemeral=True
+        )
+        return
+
+    # 구매 처리
+    bot.users[user_id]['balance'] -= total_price
+    bot.products[product_id]['stock'] -= quantity
+
+    # 구매 기록
+    purchase_record = {
+        "product_id": product_id,
+        "product_name": product['name'],
+        "quantity": quantity,
+        "total_price": total_price,
+        "timestamp": datetime.now().isoformat()
+    }
+    bot.users[user_id]['purchases'].append(purchase_record)
+
+    bot.save_data()
+
+    # 구매 완료 메시지
+    success_msg = (
+        f"✅ **구매 완료!**\n\n"
+        f"🛒 상품: **{product['name']}** x{quantity}개\n"
+        f"💳 결제 금액: {total_price:,}원\n"
+        f"💰 남은 잔액: {bot.users[user_id]['balance']:,}원"
+    )
+
+    await interaction.response.send_message(success_msg, ephemeral=True)
+
+
 @bot.event
 async def on_ready():
     print(f'{bot.user} 봇이 준비되었습니다!')
@@ -55,6 +253,26 @@ async def on_ready():
 # ========================
 # 사용자 명령어
 # ========================
+
+@bot.tree.command(name="자판기", description="자판기 쇼핑 패널을 엽니다")
+async def vending_machine(interaction: discord.Interaction):
+    """메인 자판기 패널"""
+    if not bot.products:
+        product_list = "❌ 현재 등록된 상품이 없습니다.\n\n관리자에게 문의해주세요."
+    else:
+        product_list = "🏪 **자판기 상품 목록**\n\n"
+        for product_id, product in bot.products.items():
+            stock_text = f"{product['stock']}개" if product['stock'] > 0 else "품절"
+            product_list += f"• **{product['name']}** - {product['price']:,}원\n"
+            product_list += f"  ↳ {product['description']} | 재고: {stock_text}\n\n"
+
+        product_list += "\n💡 **사용 방법**\n"
+        product_list += "1️⃣ 드롭다운에서 상품 선택\n"
+        product_list += "2️⃣ 수량 입력\n"
+        product_list += "3️⃣ 버튼으로 잔액/내역 확인"
+
+    view = ShopView()
+    await interaction.response.send_message(product_list, view=view)
 
 @bot.tree.command(name="상품목록", description="구매 가능한 상품 목록을 확인합니다")
 async def product_list(interaction: discord.Interaction):
@@ -190,8 +408,182 @@ async def purchase_history(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ========================
+# 관리자 UI 컴포넌트
+# ========================
+
+class AdminProductModal(Modal, title="상품 추가"):
+    """관리자 상품 추가 모달"""
+    product_id_input = TextInput(
+        label="상품 ID",
+        placeholder="예: cola, snack1",
+        required=True,
+        max_length=50
+    )
+    name_input = TextInput(
+        label="상품 이름",
+        placeholder="예: 콜라",
+        required=True,
+        max_length=100
+    )
+    price_input = TextInput(
+        label="가격",
+        placeholder="예: 1500",
+        required=True,
+        max_length=10
+    )
+    description_input = TextInput(
+        label="상품 설명",
+        placeholder="예: 시원한 콜라",
+        required=True,
+        max_length=200
+    )
+    stock_input = TextInput(
+        label="초기 재고",
+        placeholder="예: 100",
+        required=True,
+        max_length=10
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            product_id = self.product_id_input.value.strip()
+            name = self.name_input.value.strip()
+            price = int(self.price_input.value.strip())
+            description = self.description_input.value.strip()
+            stock = int(self.stock_input.value.strip())
+
+            if product_id in bot.products:
+                await interaction.response.send_message("❌ 이미 존재하는 상품 ID입니다.", ephemeral=True)
+                return
+
+            if price <= 0 or stock < 0:
+                await interaction.response.send_message("❌ 가격과 재고는 올바른 값이어야 합니다.", ephemeral=True)
+                return
+
+            bot.products[product_id] = {
+                "name": name,
+                "price": price,
+                "description": description,
+                "stock": stock
+            }
+
+            bot.save_data()
+
+            success_msg = (
+                f"✅ **상품 추가 완료**\n\n"
+                f"🆔 ID: {product_id}\n"
+                f"📦 이름: {name}\n"
+                f"💰 가격: {price:,}원\n"
+                f"📊 재고: {stock}개"
+            )
+
+            await interaction.response.send_message(success_msg, ephemeral=True)
+
+        except ValueError:
+            await interaction.response.send_message("❌ 가격과 재고는 숫자로 입력해주세요.", ephemeral=True)
+
+
+class AdminStockModal(Modal, title="재고 추가"):
+    """관리자 재고 추가 모달"""
+    product_id_input = TextInput(
+        label="상품 ID",
+        placeholder="재고를 추가할 상품 ID를 입력하세요",
+        required=True,
+        max_length=50
+    )
+    amount_input = TextInput(
+        label="추가 수량",
+        placeholder="예: 50",
+        required=True,
+        max_length=10
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            product_id = self.product_id_input.value.strip()
+            amount = int(self.amount_input.value.strip())
+
+            if product_id not in bot.products:
+                await interaction.response.send_message("❌ 존재하지 않는 상품입니다.", ephemeral=True)
+                return
+
+            if amount <= 0:
+                await interaction.response.send_message("❌ 수량은 1개 이상이어야 합니다.", ephemeral=True)
+                return
+
+            bot.products[product_id]['stock'] += amount
+            bot.save_data()
+
+            await interaction.response.send_message(
+                f"✅ **{bot.products[product_id]['name']}** 재고가 {amount}개 추가되었습니다.\n"
+                f"📊 현재 재고: {bot.products[product_id]['stock']}개",
+                ephemeral=True
+            )
+
+        except ValueError:
+            await interaction.response.send_message("❌ 수량은 숫자로 입력해주세요.", ephemeral=True)
+
+
+class AdminView(View):
+    """관리자 패널"""
+    def __init__(self):
+        super().__init__(timeout=180)
+
+    @discord.ui.button(label="상품 추가", style=discord.ButtonStyle.green, emoji="➕")
+    async def add_product_button(self, interaction: discord.Interaction, button: Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ 관리자 권한이 필요합니다.", ephemeral=True)
+            return
+
+        modal = AdminProductModal()
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="재고 추가", style=discord.ButtonStyle.blurple, emoji="📦")
+    async def add_stock_button(self, interaction: discord.Interaction, button: Button):
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("❌ 관리자 권한이 필요합니다.", ephemeral=True)
+            return
+
+        modal = AdminStockModal()
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(label="상품 목록", style=discord.ButtonStyle.gray, emoji="📋")
+    async def list_products_button(self, interaction: discord.Interaction, button: Button):
+        if not bot.products:
+            await interaction.response.send_message("❌ 등록된 상품이 없습니다.", ephemeral=True)
+            return
+
+        product_list = "📋 **등록된 상품 목록**\n\n"
+        for product_id, product in bot.products.items():
+            product_list += f"🆔 **ID**: `{product_id}`\n"
+            product_list += f"📦 이름: {product['name']}\n"
+            product_list += f"💰 가격: {product['price']:,}원\n"
+            product_list += f"📊 재고: {product['stock']}개\n"
+            product_list += f"📝 설명: {product['description']}\n\n"
+
+        await interaction.response.send_message(product_list, ephemeral=True)
+
+
+# ========================
 # 관리자 명령어
 # ========================
+
+@bot.tree.command(name="관리자패널", description="[관리자] 관리자 패널을 엽니다")
+async def admin_panel(interaction: discord.Interaction):
+    """관리자 패널"""
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ 관리자 권한이 필요합니다.", ephemeral=True)
+        return
+
+    admin_info = (
+        "🔧 **관리자 패널**\n\n"
+        f"📊 등록된 상품 수: {len(bot.products)}개\n"
+        f"👥 등록된 사용자 수: {len(bot.users)}명\n\n"
+        "버튼을 사용하여 상품을 관리하세요."
+    )
+
+    view = AdminView()
+    await interaction.response.send_message(admin_info, view=view, ephemeral=True)
 
 def is_admin():
     """관리자 권한 확인"""
