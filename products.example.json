@@ -1,0 +1,20 @@
+{
+  "product1": {
+    "name": "콜라",
+    "price": 1500,
+    "description": "시원한 콜라",
+    "stock": 100
+  },
+  "product2": {
+    "name": "사이다",
+    "price": 1500,
+    "description": "상쾌한 사이다",
+    "stock": 100
+  },
+  "product3": {
+    "name": "커피",
+    "price": 2000,
+    "description": "향긋한 아메리카노",
+    "stock": 50
+  }
+}
