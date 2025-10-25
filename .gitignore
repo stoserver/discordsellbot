@@ -4,6 +4,7 @@ config.json
 # 데이터 파일
 products.json
 users.json
+auto_charge_log.json
 
 # Python
 __pycache__/
