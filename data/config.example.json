@@ -1,0 +1,8 @@
+{
+  "token": "YOUR_BOT_TOKEN_HERE",
+  "pushbullet": {
+    "api_key": "YOUR_PUSHBULLET_API_KEY_HERE",
+    "charge_pattern": "충전\\s*(\\d+)원?",
+    "user_id_pattern": "사용자\\s*ID[:\\s]*(\\d+)"
+  }
+}
