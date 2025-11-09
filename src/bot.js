@@ -71,17 +71,11 @@ async function registerCommands(token, clientId, commands) {
 client.once('ready', async () => {
   console.log(`[봇] ${client.user.tag}로 로그인됨`);
 
-  // Initialize Pushbullet service
+  // Initialize and start Pushbullet service
   client.pushbulletService = new PushbulletService(client);
 
   try {
-    const config = await loadConfig();
-    if (config.pushbullet?.api_key) {
-      await client.pushbulletService.start();
-      console.log('[Pushbullet] 자동충전 시스템 활성화');
-    } else {
-      console.log('[Pushbullet] API 키가 설정되지 않음');
-    }
+    await client.pushbulletService.start();
   } catch (error) {
     console.error('[Pushbullet] 시작 실패:', error.message);
   }

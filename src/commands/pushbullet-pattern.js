@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
-import { loadConfig, saveConfig, loadGuilds } from '../utils/data.js';
+import { loadGuildData, saveGuildData } from '../utils/data.js';
 
 export default {
   data: new SlashCommandBuilder()
@@ -21,11 +21,10 @@ export default {
 
   async execute(interaction) {
     try {
-      // Check if guild is registered
       const guildId = interaction.guild.id;
-      const guilds = await loadGuilds();
+      const guildData = await loadGuildData(guildId);
 
-      if (!guilds[guildId] || !guilds[guildId].enabled) {
+      if (!guildData) {
         return await interaction.reply({
           content: '❌ 이 서버는 등록되지 않았습니다. `/등록` 명령어를 먼저 사용해주세요.',
           ephemeral: true
@@ -42,19 +41,13 @@ export default {
         });
       }
 
-      const config = await loadConfig();
-
-      if (!config.pushbullet) {
-        config.pushbullet = {};
-      }
-
       let updated = [];
 
       if (chargePattern) {
         // Validate regex
         try {
           new RegExp(chargePattern);
-          config.pushbullet.charge_pattern = chargePattern;
+          guildData.pushbullet.charge_pattern = chargePattern;
           updated.push(`충전 패턴: \`${chargePattern}\``);
         } catch (error) {
           return await interaction.reply({
@@ -68,7 +61,7 @@ export default {
         // Validate regex
         try {
           new RegExp(userIdPattern);
-          config.pushbullet.user_id_pattern = userIdPattern;
+          guildData.pushbullet.user_id_pattern = userIdPattern;
           updated.push(`사용자 ID 패턴: \`${userIdPattern}\``);
         } catch (error) {
           return await interaction.reply({
@@ -78,7 +71,7 @@ export default {
         }
       }
 
-      await saveConfig(config);
+      await saveGuildData(guildId, guildData);
 
       await interaction.reply({
         content: `✅ **패턴이 업데이트되었습니다.**\n\n${updated.join('\n')}`,

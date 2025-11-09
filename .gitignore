@@ -2,9 +2,8 @@
 data/config.json
 
 # 데이터 파일
-data/guilds.json
-data/users.json
-data/auto_charge_log.json
+data/guilds/
+data/licenses.json
 
 # Node.js
 node_modules/

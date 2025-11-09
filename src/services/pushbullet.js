@@ -1,141 +1,118 @@
-import WebSocket from 'ws';
-import { loadConfig, loadUsers, saveUsers, addAutoChargeLog } from '../utils/data.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { loadGuildData, saveGuildData } from '../utils/data.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const GUILDS_DIR = path.join(__dirname, '../../data/guilds');
 
 export class PushbulletService {
   constructor(client) {
     this.client = client;
-    this.ws = null;
-    this.connected = false;
-    this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 5;
-    this.reconnectDelay = 5000;
+    this.pollingInterval = null;
+    this.lastChecks = new Map(); // guild_id -> last_check_timestamp
   }
 
   /**
-   * Start Pushbullet WebSocket connection
+   * Start Pushbullet polling service
    */
   async start() {
-    const config = await loadConfig();
+    console.log('[Pushbullet] 자동충전 서비스 시작');
 
-    if (!config.pushbullet?.api_key) {
-      throw new Error('Pushbullet API 키가 설정되지 않았습니다.');
-    }
+    // Poll every 10 seconds
+    this.pollingInterval = setInterval(async () => {
+      await this.checkAllGuilds();
+    }, 10000);
 
-    if (this.connected) {
-      throw new Error('이미 연결되어 있습니다.');
-    }
-
-    this.connect(config.pushbullet.api_key);
+    // Initial check
+    await this.checkAllGuilds();
   }
 
   /**
-   * Connect to Pushbullet WebSocket
-   */
-  connect(apiKey) {
-    const wsUrl = `wss://stream.pushbullet.com/websocket/${apiKey}`;
-
-    this.ws = new WebSocket(wsUrl);
-
-    this.ws.on('open', () => {
-      console.log('[Pushbullet] WebSocket 연결됨');
-      this.connected = true;
-      this.reconnectAttempts = 0;
-    });
-
-    this.ws.on('message', (data) => {
-      this.handleMessage(data.toString());
-    });
-
-    this.ws.on('error', (error) => {
-      console.error('[Pushbullet] WebSocket 오류:', error.message);
-    });
-
-    this.ws.on('close', () => {
-      console.log('[Pushbullet] WebSocket 연결 종료');
-      this.connected = false;
-
-      // Auto reconnect
-      if (this.reconnectAttempts < this.maxReconnectAttempts) {
-        this.reconnectAttempts++;
-        console.log(`[Pushbullet] 재연결 시도 ${this.reconnectAttempts}/${this.maxReconnectAttempts}...`);
-        setTimeout(() => {
-          this.start().catch(err => {
-            console.error('[Pushbullet] 재연결 실패:', err.message);
-          });
-        }, this.reconnectDelay);
-      }
-    });
-  }
-
-  /**
-   * Stop Pushbullet connection
+   * Stop Pushbullet service
    */
   stop() {
-    if (!this.connected) {
-      throw new Error('연결되어 있지 않습니다.');
+    console.log('[Pushbullet] 자동충전 서비스 중지');
+    if (this.pollingInterval) {
+      clearInterval(this.pollingInterval);
+      this.pollingInterval = null;
     }
-
-    this.reconnectAttempts = this.maxReconnectAttempts; // Prevent auto reconnect
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    this.connected = false;
   }
 
   /**
-   * Handle incoming WebSocket message
+   * Check all guilds for new pushes
    */
-  async handleMessage(data) {
+  async checkAllGuilds() {
     try {
-      const message = JSON.parse(data);
+      const files = await fs.readdir(GUILDS_DIR);
 
-      if (message.type === 'tickle' && message.subtype === 'push') {
-        // Fetch latest push
-        await this.checkLatestPush();
-      } else if (message.type === 'push') {
-        // Direct push notification
-        await this.handleNotification(message.push);
+      for (const file of files) {
+        if (!file.endsWith('.json')) continue;
+
+        const guildId = file.replace('.json', '');
+        await this.checkGuild(guildId);
       }
     } catch (error) {
-      console.error('[Pushbullet] 메시지 처리 오류:', error);
+      // Directory doesn't exist yet or other error
+      if (error.code !== 'ENOENT') {
+        console.error('[Pushbullet] 서버 확인 오류:', error);
+      }
     }
   }
 
   /**
-   * Check latest push from Pushbullet API
+   * Check a single guild for new pushes
    */
-  async checkLatestPush() {
+  async checkGuild(guildId) {
     try {
-      const config = await loadConfig();
-      const response = await fetch('https://api.pushbullet.com/v2/pushes?limit=1', {
+      const guildData = await loadGuildData(guildId);
+      if (!guildData || !guildData.pushbullet?.api_key) {
+        return;
+      }
+
+      const lastCheck = this.lastChecks.get(guildId) || 0;
+      const now = Date.now() / 1000; // Unix timestamp
+
+      // Fetch pushes since last check
+      const response = await fetch(`https://api.pushbullet.com/v2/pushes?modified_after=${lastCheck}`, {
         headers: {
-          'Access-Token': config.pushbullet.api_key
+          'Access-Token': guildData.pushbullet.api_key
         }
       });
 
+      if (!response.ok) {
+        if (response.status === 401) {
+          console.error(`[Pushbullet] 서버 ${guildId}: 잘못된 API 키`);
+        }
+        return;
+      }
+
       const data = await response.json();
-      if (data.pushes && data.pushes.length > 0) {
-        await this.handleNotification(data.pushes[0]);
+      this.lastChecks.set(guildId, now);
+
+      if (!data.pushes || data.pushes.length === 0) {
+        return;
+      }
+
+      // Process each push
+      for (const push of data.pushes) {
+        if (push.type === 'mirror' && !push.dismissed) {
+          await this.handleNotification(guildId, guildData, push);
+        }
       }
     } catch (error) {
-      console.error('[Pushbullet] Push 확인 오류:', error);
+      console.error(`[Pushbullet] 서버 ${guildId} 확인 오류:`, error.message);
     }
   }
 
   /**
    * Handle notification and auto-charge
    */
-  async handleNotification(push) {
+  async handleNotification(guildId, guildData, push) {
     try {
-      // Only process mirror notifications
-      if (push.type !== 'mirror') {
-        return;
-      }
-
-      const config = await loadConfig();
-      const chargePattern = new RegExp(config.pushbullet.charge_pattern || '충전\\s*(\\d+)원?');
-      const userIdPattern = new RegExp(config.pushbullet.user_id_pattern || '사용자\\s*ID[:\\s]*(\\d+)');
+      const chargePattern = new RegExp(guildData.pushbullet.charge_pattern || '충전\\s*(\\d+)원?');
+      const userIdPattern = new RegExp(guildData.pushbullet.user_id_pattern || '사용자\\s*ID[:\\s]*(\\d+)');
 
       const notificationText = push.body || push.title || '';
 
@@ -150,73 +127,58 @@ export class PushbulletService {
       // Extract user ID
       const userIdMatch = notificationText.match(userIdPattern);
       if (!userIdMatch) {
-        console.log('[Pushbullet] 사용자 ID를 찾을 수 없습니다.');
+        console.log(`[Pushbullet] 서버 ${guildId}: 사용자 ID를 찾을 수 없음`);
         return;
       }
 
       const userId = userIdMatch[1];
 
       // Auto charge
-      await this.autoCharge(userId, amount, notificationText);
+      await this.autoCharge(guildId, guildData, userId, amount, notificationText);
     } catch (error) {
-      console.error('[Pushbullet] 알림 처리 오류:', error);
+      console.error(`[Pushbullet] 서버 ${guildId} 알림 처리 오류:`, error);
     }
   }
 
   /**
    * Auto charge user
    */
-  async autoCharge(userId, amount, notificationText) {
+  async autoCharge(guildId, guildData, userId, amount, notificationText) {
     try {
-      const users = await loadUsers();
-
-      if (!users[userId]) {
-        users[userId] = {
+      if (!guildData.users[userId]) {
+        guildData.users[userId] = {
           balance: 0,
-          charges: []
+          charges: [],
+          purchases: []
         };
       }
 
-      users[userId].balance += amount;
-      users[userId].charges = users[userId].charges || [];
-      users[userId].charges.unshift({
+      guildData.users[userId].balance += amount;
+      guildData.users[userId].charges.unshift({
         amount,
         timestamp: new Date().toISOString(),
         method: 'auto',
         notification: notificationText
       });
 
-      await saveUsers(users);
+      // Keep last 50 charges
+      if (guildData.users[userId].charges.length > 50) {
+        guildData.users[userId].charges.splice(50);
+      }
 
-      // Log
-      await addAutoChargeLog({
-        user_id: userId,
-        amount,
-        timestamp: new Date().toISOString(),
-        notification: notificationText
-      });
+      await saveGuildData(guildId, guildData);
 
-      console.log(`[Pushbullet] 자동 충전 완료: 사용자 ${userId}, 금액 ${amount}원`);
+      console.log(`[Pushbullet] 서버 ${guildId}: 자동 충전 완료 - 사용자 ${userId}, 금액 ${amount}원`);
 
       // Send DM to user
       try {
         const user = await this.client.users.fetch(userId);
-        await user.send(`✅ **자동 충전 완료**\n금액: ${amount.toLocaleString()}원\n현재 잔액: ${users[userId].balance.toLocaleString()}원`);
+        await user.send(`✅ **자동 충전 완료**\n서버: ${guildData.name}\n금액: ${amount.toLocaleString()}원\n현재 잔액: ${guildData.users[userId].balance.toLocaleString()}원`);
       } catch (error) {
-        console.error('[Pushbullet] DM 전송 실패:', error.message);
+        console.error(`[Pushbullet] DM 전송 실패:`, error.message);
       }
     } catch (error) {
-      console.error('[Pushbullet] 자동 충전 오류:', error);
+      console.error(`[Pushbullet] 서버 ${guildId} 자동 충전 오류:`, error);
     }
-  }
-
-  /**
-   * Get connection status
-   */
-  getStatus() {
-    return {
-      connected: this.connected,
-      reconnectAttempts: this.reconnectAttempts
-    };
   }
 }

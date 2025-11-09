@@ -1,0 +1,13 @@
+{
+  "LICENSE-PRO-EXAMPLE": {
+    "code": "LICENSE-PRO-EXAMPLE",
+    "plan": "pro",
+    "created_at": "2024-01-01T00:00:00.000Z",
+    "created_by": "admin_user_id",
+    "duration_days": 365,
+    "used": false,
+    "used_by": null,
+    "used_at": null,
+    "guild_id": null
+  }
+}

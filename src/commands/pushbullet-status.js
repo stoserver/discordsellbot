@@ -1,59 +1,53 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { loadConfig, loadGuilds } from '../utils/data.js';
+import { loadGuildData } from '../utils/data.js';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('pushbullet상태')
-    .setDescription('Pushbullet 연결 상태를 확인합니다.'),
+    .setDescription('Pushbullet 설정 상태를 확인합니다.'),
 
   async execute(interaction) {
     try {
-      // Check if guild is registered
       const guildId = interaction.guild.id;
-      const guilds = await loadGuilds();
+      const guildData = await loadGuildData(guildId);
 
-      if (!guilds[guildId] || !guilds[guildId].enabled) {
+      if (!guildData) {
         return await interaction.reply({
           content: '❌ 이 서버는 등록되지 않았습니다. `/등록` 명령어를 먼저 사용해주세요.',
           ephemeral: true
         });
       }
 
-      const config = await loadConfig();
-      const pushbulletService = interaction.client.pushbulletService;
-
       const embed = new EmbedBuilder()
-        .setTitle('📡 Pushbullet 상태')
-        .setColor(pushbulletService?.connected ? 0x00ff00 : 0xff0000)
+        .setTitle('📡 Pushbullet 설정 상태')
+        .setColor(guildData.pushbullet.api_key ? 0x00ff00 : 0xff0000)
         .setTimestamp();
 
-      if (!config.pushbullet?.api_key) {
+      if (!guildData.pushbullet.api_key) {
         embed.setDescription('❌ API 키가 설정되지 않았습니다.\n`/pushbullet설정` 명령어로 설정해주세요.');
       } else {
-        const status = pushbulletService?.getStatus();
-        const connected = status?.connected || false;
-
         embed.addFields(
-          { name: '연결 상태', value: connected ? '✅ 연결됨' : '❌ 연결 안됨', inline: true },
           { name: 'API 키', value: '✅ 설정됨', inline: true },
-          { name: '재연결 시도', value: `${status?.reconnectAttempts || 0}회`, inline: true }
+          { name: '상태', value: '✅ 자동충전 활성화', inline: true }
         );
 
-        if (config.pushbullet.charge_pattern) {
+        if (guildData.pushbullet.charge_pattern) {
           embed.addFields({
             name: '충전 패턴',
-            value: `\`${config.pushbullet.charge_pattern}\``,
+            value: `\`${guildData.pushbullet.charge_pattern}\``,
             inline: false
           });
         }
 
-        if (config.pushbullet.user_id_pattern) {
+        if (guildData.pushbullet.user_id_pattern) {
           embed.addFields({
             name: '사용자 ID 패턴',
-            value: `\`${config.pushbullet.user_id_pattern}\``,
+            value: `\`${guildData.pushbullet.user_id_pattern}\``,
             inline: false
           });
         }
+
+        embed.setFooter({ text: 'Android 기기에서 Pushbullet 앱 실행 시 자동충전이 작동합니다.' });
       }
 
       await interaction.reply({ embeds: [embed], ephemeral: true });

@@ -6,6 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DATA_DIR = path.join(__dirname, '../../data');
+const GUILDS_DIR = path.join(DATA_DIR, 'guilds');
 
 /**
  * Load JSON file
@@ -40,7 +41,11 @@ export async function saveJSON(filename, data) {
  * @returns {Promise<Object>}
  */
 export async function loadConfig() {
-  return await loadJSON('config.json');
+  try {
+    return await loadJSON('config.json');
+  } catch {
+    return { license_admins: [] };
+  }
 }
 
 /**
@@ -52,70 +57,164 @@ export async function saveConfig(config) {
 }
 
 /**
- * Load guilds data
+ * Load licenses
  * @returns {Promise<Object>}
  */
-export async function loadGuilds() {
-  return await loadJSON('guilds.json');
-}
-
-/**
- * Save guilds data
- * @param {Object} guilds
- */
-export async function saveGuilds(guilds) {
-  await saveJSON('guilds.json', guilds);
-}
-
-/**
- * Load users data
- * @returns {Promise<Object>}
- */
-export async function loadUsers() {
-  return await loadJSON('users.json');
-}
-
-/**
- * Save users data
- * @param {Object} users
- */
-export async function saveUsers(users) {
-  await saveJSON('users.json', users);
-}
-
-/**
- * Load auto charge log
- * @returns {Promise<Array>}
- */
-export async function loadAutoChargeLog() {
+export async function loadLicenses() {
   try {
-    const data = await loadJSON('auto_charge_log.json');
-    return data.logs || [];
+    return await loadJSON('licenses.json');
   } catch {
-    return [];
+    return {};
   }
 }
 
 /**
- * Save auto charge log
- * @param {Array} logs
+ * Save licenses
+ * @param {Object} licenses
  */
-export async function saveAutoChargeLog(logs) {
-  await saveJSON('auto_charge_log.json', { logs });
+export async function saveLicenses(licenses) {
+  await saveJSON('licenses.json', licenses);
 }
 
 /**
- * Add auto charge log entry (keep last 100)
- * @param {Object} entry
+ * Load guild data
+ * @param {string} guildId
+ * @returns {Promise<Object|null>}
  */
-export async function addAutoChargeLog(entry) {
-  const logs = await loadAutoChargeLog();
-  logs.unshift(entry);
+export async function loadGuildData(guildId) {
+  try {
+    const filePath = path.join(GUILDS_DIR, `${guildId}.json`);
+    const data = await fs.readFile(filePath, 'utf-8');
+    return JSON.parse(data);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
 
-  // Keep only last 100 entries
-  if (logs.length > 100) {
-    logs.splice(100);
+/**
+ * Save guild data
+ * @param {string} guildId
+ * @param {Object} data
+ */
+export async function saveGuildData(guildId, data) {
+  const filePath = path.join(GUILDS_DIR, `${guildId}.json`);
+  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+}
+
+/**
+ * Create new guild data
+ * @param {string} guildId
+ * @param {string} guildName
+ * @returns {Object}
+ */
+export function createGuildData(guildId, guildName) {
+  return {
+    guild_id: guildId,
+    name: guildName,
+    registered_at: new Date().toISOString(),
+    plan: 'free',
+    license_code: null,
+    license_expires_at: null,
+    pushbullet: {
+      api_key: null,
+      charge_pattern: '충전\\s*(\\d+)원?',
+      user_id_pattern: '사용자\\s*ID[:\\s]*(\\d+)'
+    },
+    categories: {},
+    products: {},
+    users: {}
+  };
+}
+
+/**
+ * Get plan limits
+ * @param {string} plan
+ * @returns {Object}
+ */
+export function getPlanLimits(plan) {
+  switch (plan) {
+    case 'free':
+      return {
+        maxCategories: 1,
+        maxProducts: 3,
+        canUseSelfBot: false
+      };
+    case 'pro':
+      return {
+        maxCategories: Infinity,
+        maxProducts: Infinity,
+        canUseSelfBot: false
+      };
+    case 'premium':
+      return {
+        maxCategories: Infinity,
+        maxProducts: Infinity,
+        canUseSelfBot: true
+      };
+    default:
+      return {
+        maxCategories: 1,
+        maxProducts: 3,
+        canUseSelfBot: false
+      };
+  }
+}
+
+/**
+ * Check if guild can add category
+ * @param {Object} guildData
+ * @returns {boolean}
+ */
+export function canAddCategory(guildData) {
+  const limits = getPlanLimits(guildData.plan);
+  const currentCount = Object.keys(guildData.categories || {}).length;
+  return currentCount < limits.maxCategories;
+}
+
+/**
+ * Check if guild can add product
+ * @param {Object} guildData
+ * @returns {boolean}
+ */
+export function canAddProduct(guildData) {
+  const limits = getPlanLimits(guildData.plan);
+  const currentCount = Object.keys(guildData.products || {}).length;
+  return currentCount < limits.maxProducts;
+}
+
+/**
+ * Add auto charge log
+ * @param {string} guildId
+ * @param {string} userId
+ * @param {number} amount
+ * @param {string} notification
+ */
+export async function addChargeLog(guildId, userId, amount, notification) {
+  const guildData = await loadGuildData(guildId);
+  if (!guildData) return;
+
+  if (!guildData.users[userId]) {
+    guildData.users[userId] = {
+      balance: 0,
+      charges: [],
+      purchases: []
+    };
   }
 
-  await saveAutoChargeLog(logs);
+  guildData.users[userId].charges.unshift({
+    amount,
+    timestamp: new Date().toISOString(),
+    method: 'auto',
+    notification
+  });
+
+  // Keep last 50 charges per user
+  if (guildData.users[userId].charges.length > 50) {
+    guildData.users[userId].charges.splice(50);
+  }
+
+  await saveGuildData(guildId, guildData);
 }
