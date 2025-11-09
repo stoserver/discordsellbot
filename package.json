@@ -1,0 +1,28 @@
+{
+  "name": "discord-auto-charge-bot",
+  "version": "2.0.0",
+  "description": "Discord bot with Pushbullet auto-charge system",
+  "main": "src/bot.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/bot.js",
+    "dev": "node --watch src/bot.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "pushbullet",
+    "auto-charge"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "pushbullet": "^2.4.0",
+    "ws": "^8.16.0",
+    "dotenv": "^16.4.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

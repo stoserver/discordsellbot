@@ -1,12 +1,20 @@
 # 봇 설정 및 토큰
-config.json
+data/config.json
 
 # 데이터 파일
-products.json
-users.json
-auto_charge_log.json
+data/guilds.json
+data/users.json
+data/auto_charge_log.json
 
-# Python
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Python (legacy)
 __pycache__/
 *.py[cod]
 *$py.class
@@ -28,10 +36,16 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
+# Virtual Environment (legacy)
 venv/
 ENV/
 env/
+
+# Legacy files
+config.json
+products.json
+users.json
+auto_charge_log.json
 
 # IDE
 .vscode/

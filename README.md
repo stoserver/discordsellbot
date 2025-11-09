@@ -1,311 +1,254 @@
-# 디스코드 자판기 봇
+# Discord Auto Charge Bot
 
-Discord에서 사용할 수 있는 자판기 봇입니다. 사용자들은 포인트를 사용하여 상품을 구매할 수 있습니다.
+Discord 봇과 Pushbullet을 연동한 자동 충전 시스템입니다.
+
+> **v2.0.0**: Python에서 JavaScript (Node.js)로 전환되었습니다. 기존 Python 버전은 `legacy/` 폴더에 보관되어 있습니다.
 
 ## 주요 기능
 
-### 사용자 기능 (인터랙티브 UI)
-- **자판기 패널**: 버튼과 드롭다운으로 편리한 쇼핑
-- **상품 선택**: 드롭다운 메뉴에서 상품 선택
-- **수량 입력**: 모달 팝업으로 수량 입력
-- **잔액 확인**: 버튼 클릭으로 즉시 확인
-- **구매 내역**: 최근 구매 내역 조회
-
-### 관리자 기능 (인터랙티브 UI)
-- **관리자 패널**: 버튼 기반 관리 인터페이스
-- **상품 추가**: 모달 폼으로 간편한 상품 등록
-- **재고 관리**: 버튼으로 재고 추가
-- **상품 목록 조회**: 등록된 상품 확인
-- **포인트 충전**: 사용자에게 포인트 지급
-- **Pushbullet 자동 충전**: Android 알림을 통한 자동 충전
+- **서버별 등록 시스템**: `/등록` 명령어로 서버에서 봇을 활성화
+- **자동 충전**: Pushbullet 알림을 감지하여 자동으로 포인트 충전
+- **관리자 수동 충전**: `/충전` 명령어로 사용자에게 직접 포인트 지급
+- **실시간 연결**: WebSocket을 통한 Pushbullet 실시간 알림 수신
+- **자동 재연결**: 연결 끊김 시 자동으로 재연결 시도
+- **커스텀 패턴**: 정규식으로 알림 파싱 패턴 커스터마이징 가능
 
 ## 설치 방법
 
-### 1. 필요한 패키지 설치
+### 1. 저장소 클론
 
 ```bash
-pip install -r requirements.txt
+git clone <repository-url>
+cd discordsellbot
 ```
 
-### 2. 디스코드 봇 생성
+### 2. 의존성 설치
 
-1. [Discord Developer Portal](https://discord.com/developers/applications)에 접속
-2. "New Application" 클릭하여 새 애플리케이션 생성
-3. "Bot" 메뉴에서 봇 생성
-4. "Reset Token"을 클릭하여 토큰 복사
-5. "Privileged Gateway Intents"에서 다음 항목 활성화:
-   - Presence Intent
-   - Server Members Intent
-   - Message Content Intent
+```bash
+npm install
+```
 
-### 3. 봇 초대하기
+### 3. 설정 파일 생성
 
-1. "OAuth2" > "URL Generator" 메뉴로 이동
-2. "SCOPES"에서 `bot`과 `applications.commands` 선택
-3. "BOT PERMISSIONS"에서 다음 권한 선택:
-   - Send Messages
-   - Embed Links
-   - Read Message History
-   - Use Slash Commands
-4. 생성된 URL로 봇을 서버에 초대
-
-### 4. 설정 파일 구성
-
-`config.json` 파일을 열어 봇 토큰을 입력합니다:
+`data/config.json` 파일을 생성하고 아래 내용을 입력:
 
 ```json
 {
-  "token": "여기에_봇_토큰_입력"
-}
-```
-
-### 5. 봇 실행
-
-```bash
-python bot.py
-```
-
-## 슬래시 커맨드 사용법
-
-### 메인 명령어 (UI 기반)
-
-#### `/자판기`
-**인터랙티브 자판기 패널을 엽니다** (권장!)
-- 드롭다운 메뉴에서 상품 선택
-- 모달 창에서 수량 입력
-- 버튼으로 잔액 확인, 구매 내역 조회
-- 실시간 상품 새로고침
-
-**사용 방법:**
-1. `/자판기` 명령어 입력
-2. 드롭다운 메뉴에서 원하는 상품 선택
-3. 팝업 창에서 구매 수량 입력
-4. 하단 버튼으로 잔액/내역 확인
-
-#### `/관리자패널`
-**관리자 전용 패널을 엽니다** (관리자만)
-- 버튼으로 상품 추가
-- 버튼으로 재고 추가
-- 상품 목록 조회
-
-### 사용자 명령어 (텍스트 기반)
-
-#### `/상품목록`
-구매 가능한 모든 상품의 목록을 임베드로 확인합니다.
-- 상품명, 가격, 설명, 재고 정보 표시
-- 각 상품의 ID 확인 가능
-
-#### `/잔액`
-현재 내 포인트 잔액을 확인합니다.
-
-#### `/구매 [product_id] [quantity]`
-상품을 구매합니다.
-- `product_id`: 구매할 상품의 ID
-- `quantity`: 구매 수량 (기본값: 1)
-
-예시:
-```
-/구매 product_id:product1 quantity:2
-```
-
-#### `/구매내역`
-최근 10개의 구매 내역을 확인합니다.
-- 구매 상품, 수량, 금액, 구매 시각 표시
-
-### 관리자 명령어
-
-#### `/상품추가 [product_id] [name] [price] [description] [stock]`
-새로운 상품을 등록합니다.
-- `product_id`: 상품의 고유 ID
-- `name`: 상품 이름
-- `price`: 가격 (정수)
-- `description`: 상품 설명
-- `stock`: 초기 재고
-
-예시:
-```
-/상품추가 product_id:cola name:콜라 price:1500 description:시원한_콜라 stock:100
-```
-
-#### `/상품삭제 [product_id]`
-등록된 상품을 삭제합니다.
-- `product_id`: 삭제할 상품의 ID
-
-예시:
-```
-/상품삭제 product_id:cola
-```
-
-#### `/재고추가 [product_id] [amount]`
-상품의 재고를 추가합니다.
-- `product_id`: 상품 ID
-- `amount`: 추가할 재고 수량
-
-예시:
-```
-/재고추가 product_id:cola amount:50
-```
-
-#### `/충전 [user] [amount]`
-사용자에게 포인트를 충전합니다.
-- `user`: 충전할 사용자 멘션
-- `amount`: 충전할 금액
-
-예시:
-```
-/충전 user:@사용자 amount:10000
-```
-
-### Pushbullet 자동 충전 (관리자 명령어)
-
-⚠️ **중요: Android 기기만 지원됩니다. iOS(아이폰)는 지원되지 않습니다.**
-
-Pushbullet을 이용한 알림 미러링으로 자동 충전을 구현할 수 있습니다.
-
-#### 설정 방법
-
-1. **Pushbullet 계정 생성 및 API 키 발급**
-   - [Pushbullet 웹사이트](https://www.pushbullet.com/)에서 계정 생성
-   - Settings > Account > Access Token에서 API 키 복사
-
-2. **Android 기기 설정**
-   - Google Play 스토어에서 Pushbullet 앱 설치
-   - 같은 계정으로 로그인
-   - 알림 미러링 권한 허용
-
-3. **봇 설정**
-   ```
-   /pushbullet설정 api_key:여기에_API_키_입력
-   ```
-
-4. **알림 미러링 시작**
-   ```
-   /pushbullet시작
-   ```
-
-#### 알림 형식
-
-충전을 위해서는 알림 제목 또는 내용에 다음 정보가 포함되어야 합니다:
-
-```
-충전 10000원
-사용자 ID: 123456789012345678
-```
-
-또는
-
-```
-충전 5000
-사용자 ID 987654321098765432
-```
-
-**예시 시나리오:**
-1. 결제 시스템에서 충전 완료 알림 전송
-2. Android 기기가 알림 수신
-3. Pushbullet이 알림을 미러링
-4. 봇이 자동으로 패턴 인식 후 충전 실행
-5. 로그에 기록
-
-#### Pushbullet 명령어
-
-| 명령어 | 설명 |
-|--------|------|
-| `/pushbullet설정 [api_key]` | API 키 설정 |
-| `/pushbullet시작` | 알림 미러링 시작 |
-| `/pushbullet중지` | 알림 미러링 중지 |
-| `/pushbullet상태` | 연결 상태 및 통계 확인 |
-| `/pushbullet패턴 [charge_pattern] [user_id_pattern]` | 알림 패턴 커스터마이징 (정규식) |
-
-#### 커스텀 패턴 설정
-
-기본 패턴이 맞지 않으면 정규식으로 커스터마이징 가능:
-
-```
-/pushbullet패턴 charge_pattern:결제\s*(\d+) user_id_pattern:유저[:\s]*(\d+)
-```
-
-#### 자동 충전 로그
-
-모든 자동 충전 내역은 `auto_charge_log.json`에 기록됩니다:
-- 사용자 ID
-- 충전 금액
-- 타임스탬프
-- 원본 알림 내용
-
-## 데이터 저장
-
-봇은 다음 두 개의 JSON 파일에 데이터를 저장합니다:
-
-### `products.json`
-상품 정보를 저장합니다.
-```json
-{
-  "product1": {
-    "name": "콜라",
-    "price": 1500,
-    "description": "시원한 콜라",
-    "stock": 100
+  "token": "YOUR_DISCORD_BOT_TOKEN",
+  "pushbullet": {
+    "api_key": "YOUR_PUSHBULLET_API_KEY",
+    "charge_pattern": "충전\\s*(\\d+)원?",
+    "user_id_pattern": "사용자\\s*ID[:\\s]*(\\d+)"
   }
 }
 ```
 
-### `users.json`
-사용자 정보와 구매 내역을 저장합니다.
+### 4. Discord 봇 토큰 발급
+
+1. [Discord Developer Portal](https://discord.com/developers/applications)에서 봇 생성
+2. Bot 탭에서 토큰 복사
+3. `config.json`의 `token`에 입력
+
+### 5. Pushbullet API 키 발급
+
+1. [Pushbullet Settings](https://www.pushbullet.com/#settings/account)에서 API 키 생성
+2. `config.json`의 `pushbullet.api_key`에 입력 (또는 `/pushbullet설정` 명령어 사용)
+
+### 6. 봇 실행
+
+```bash
+npm start
+```
+
+개발 모드 (자동 재시작):
+
+```bash
+npm run dev
+```
+
+## 프로젝트 구조
+
+```
+discordsellbot/
+├── src/
+│   ├── bot.js                    # 메인 봇 파일
+│   ├── commands/                 # 슬래시 명령어
+│   │   ├── register.js          # /등록
+│   │   ├── charge.js            # /충전
+│   │   ├── pushbullet-setup.js  # /pushbullet설정
+│   │   ├── pushbullet-pattern.js # /pushbullet패턴
+│   │   └── pushbullet-status.js # /pushbullet상태
+│   ├── services/
+│   │   └── pushbullet.js        # Pushbullet WebSocket 서비스
+│   └── utils/
+│       └── data.js              # JSON 데이터 관리
+├── data/
+│   ├── config.json              # 봇 설정 (gitignore)
+│   ├── guilds.json              # 등록된 서버 목록 (gitignore)
+│   ├── users.json               # 사용자 잔액 데이터 (gitignore)
+│   └── auto_charge_log.json     # 자동충전 로그 (gitignore)
+├── legacy/                      # 기존 Python 파일들
+└── package.json
+```
+
+## 사용 방법
+
+### 서버 등록 (관리자 전용)
+
+서버에서 봇을 사용하려면 먼저 등록이 필요합니다:
+
+```
+/등록
+```
+
+이 명령어는 자동으로 Pushbullet 연결을 시작합니다.
+
+### 수동 충전 (관리자 전용)
+
+사용자에게 포인트를 수동으로 충전:
+
+```
+/충전 사용자:@user 금액:10000
+```
+
+### Pushbullet 설정 (관리자 전용)
+
+API 키 설정 또는 변경:
+
+```
+/pushbullet설정 api_key:YOUR_API_KEY
+```
+
+### 알림 패턴 커스터마이징 (관리자 전용)
+
+자동충전 시 사용할 정규식 패턴 변경:
+
+```
+/pushbullet패턴 충전패턴:충전\s*(\d+)원? 사용자id패턴:사용자\s*ID[:\s]*(\d+)
+```
+
+**기본 패턴 예시:**
+
+알림 내용이 다음과 같다면:
+```
+충전 10000원
+사용자 ID: 123456789
+```
+
+위 패턴이 자동으로 추출하여 사용자 `123456789`에게 `10000`원을 충전합니다.
+
+### 연결 상태 확인
+
+Pushbullet 연결 상태 및 설정 확인:
+
+```
+/pushbullet상태
+```
+
+## 자동 충전 작동 방식
+
+1. Android 기기에 Pushbullet 앱 설치 및 로그인
+2. 충전 관련 알림이 오면 Pushbullet이 자동으로 미러링
+3. 봇이 WebSocket으로 실시간 수신
+4. 설정된 정규식 패턴으로 금액과 사용자 ID 추출
+5. 자동으로 해당 사용자에게 포인트 충전
+6. DM으로 충전 알림 전송
+
+## 데이터 구조
+
+### guilds.json
+
 ```json
 {
-  "123456789012345678": {
+  "guild_id": {
+    "name": "서버 이름",
+    "registered_at": "2024-01-01T00:00:00.000Z",
+    "enabled": true
+  }
+}
+```
+
+### users.json
+
+```json
+{
+  "user_id": {
     "balance": 10000,
-    "purchases": [
+    "charges": [
       {
-        "product_id": "product1",
-        "product_name": "콜라",
-        "quantity": 2,
-        "total_price": 3000,
-        "timestamp": "2025-10-25T12:00:00"
+        "amount": 10000,
+        "timestamp": "2024-01-01T00:00:00.000Z",
+        "method": "auto",
+        "notification": "충전 10000원..."
       }
     ]
   }
 }
 ```
 
-## 구조
+### auto_charge_log.json
 
+```json
+{
+  "logs": [
+    {
+      "user_id": "123456789",
+      "amount": 10000,
+      "timestamp": "2024-01-01T00:00:00.000Z",
+      "notification": "충전 10000원..."
+    }
+  ]
+}
 ```
-discordsellbot/
-├── bot.py                    # 메인 봇 파일
-├── config.json               # 봇 설정 (토큰, Pushbullet 설정)
-├── requirements.txt          # Python 패키지 의존성
-├── products.json             # 상품 데이터 (자동 생성)
-├── users.json                # 사용자 데이터 (자동 생성)
-├── auto_charge_log.json      # 자동 충전 로그 (자동 생성)
-├── products.example.json     # 상품 데이터 예시
-├── users.example.json        # 사용자 데이터 예시
-└── README.md                 # 이 파일
-```
+
+## 요구사항
+
+- Node.js 18 이상
+- Discord 봇 토큰
+- Pushbullet API 키
+- Android 기기 (iOS는 알림 미러링 미지원)
 
 ## 주의사항
 
-- 관리자 명령어는 서버 관리자 권한이 있는 사용자만 사용할 수 있습니다
-- 데이터는 JSON 파일로 저장되므로 정기적으로 백업하는 것이 좋습니다
-- 봇 토큰은 절대 공개하지 마세요
-- `config.json`은 `.gitignore`에 추가하는 것을 권장합니다
+- `data/config.json` 파일은 민감한 정보를 포함하므로 절대 공개하지 마세요
+- Pushbullet API 키는 개인 키이므로 안전하게 관리하세요
+- iOS는 알림 미러링을 지원하지 않으므로 Android 기기가 필요합니다
 
-## 향후 개선 사항
+## 문제 해결
 
-- [ ] 데이터베이스 연동 (SQLite, PostgreSQL 등)
-- [ ] 결제 시스템 통합 (토스페이, 페이팔 등)
-- [ ] 상품 카테고리 기능
-- [ ] 할인/쿠폰 시스템
-- [ ] 구매 제한 기능
-- [ ] 통계 및 리포트 기능
-- [ ] 웹 대시보드
-- [ ] 다국어 지원
-- [x] Pushbullet 자동 충전 (완료)
+### 봇이 시작되지 않음
+
+- `data/config.json`에 올바른 Discord 봇 토큰이 입력되었는지 확인
+- Node.js 버전이 18 이상인지 확인
+
+### Pushbullet 연결 실패
+
+- API 키가 올바른지 확인
+- 네트워크 연결 상태 확인
+- `/pushbullet상태` 명령어로 상태 확인
+
+### 자동 충전이 작동하지 않음
+
+- 정규식 패턴이 알림 내용과 일치하는지 확인
+- `/pushbullet패턴` 명령어로 패턴 수정
+- Android 기기에서 Pushbullet이 실행 중인지 확인
 
 ## 라이선스
 
 MIT License
 
-## 문의
+## 변경 이력
 
-버그 리포트나 기능 제안은 이슈로 등록해주세요.
+### v2.0.0 (JavaScript 버전)
+
+- Python에서 JavaScript (Node.js)로 전환
+- 서버별 등록 시스템 추가
+- 사용자 기능 (자판기, 상품 구매 등) 제거
+- Pushbullet 자동 시작/중지 기능 제거 (등록 시 자동 활성화)
+- 모듈화된 구조로 재구성
+
+### v1.0.0 (Python 버전)
+
+- 초기 버전 (legacy 폴더에 보관)
+- 자판기 UI 및 상품 관리 기능
+- Pushbullet 자동충전 시스템

@@ -1,0 +1,12 @@
+{
+  "user_id_here": {
+    "balance": 10000,
+    "charges": [
+      {
+        "amount": 10000,
+        "timestamp": "2024-01-01T00:00:00.000Z",
+        "method": "auto"
+      }
+    ]
+  }
+}
